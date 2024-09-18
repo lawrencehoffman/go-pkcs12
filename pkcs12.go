@@ -103,6 +103,34 @@ var LegacyRC2 = &Encoder{
 	rand:                 rand.Reader,
 }
 
+// LegacyRC2Both is similar to LegacyRC2 but uses 40BitRC2CBMC for both the
+// certAlgorithm and keyAlgorithm. This is occassionally seen in the wild.
+//
+// This still encodes PKCS#12 files using weak algorithms that were
+// traditionally used in PKCS#12 files, including those produced
+// by OpenSSL before 3.0.0, go-pkcs12 before 0.3.0, and Java when
+// keystore.pkcs12.legacy is defined.  Specifically, certificates
+// are encrypted using PBE with RC2, and keys are encrypted using PBE
+// with 3DES, using keys derived with 2048 iterations of HMAC-SHA-1.
+// MACs use HMAC-SHA-1 with keys derived with 1 iteration of HMAC-SHA-1.
+//
+// Due to the weak encryption, it is STRONGLY RECOMMENDED that you use [DefaultPassword]
+// when encoding PKCS#12 files using this encoder, and protect the PKCS#12 files
+// using other means.
+//
+// By default, OpenSSL 3 can't decode PKCS#12 files created using this encoder.
+// For better compatibility, use [LegacyDES].  For better security, use
+// [Modern2023].
+var LegacyRC2Both = &Encoder{
+	macAlgorithm:         oidSHA1,
+	certAlgorithm:        oidPBEWithSHAAnd40BitRC2CBC,
+	keyAlgorithm:         oidPBEWithSHAAnd40BitRC2CBC,
+	macIterations:        1,
+	encryptionIterations: 2048,
+	saltLen:              8,
+	rand:                 rand.Reader,
+}
+
 // LegacyDES encodes PKCS#12 files using weak algorithms that are
 // supported by a wide variety of software.  Certificates and keys
 // are encrypted using PBE with 3DES using keys derived with 2048
@@ -294,7 +322,6 @@ func ToPEM(pfxData []byte, password string) ([]*pem.Block, error) {
 	}
 
 	bags, encodedPassword, err := getSafeContents(pfxData, encodedPassword, 2, 2)
-
 	if err != nil {
 		return nil, err
 	}
@@ -637,7 +664,7 @@ func (enc *Encoder) Encode(privateKey interface{}, certificate *x509.Certificate
 	var pfx pfxPdu
 	pfx.Version = 3
 
-	var certFingerprint = sha1.Sum(certificate.Raw)
+	certFingerprint := sha1.Sum(certificate.Raw)
 	var localKeyIdAttr pkcs12Attribute
 	localKeyIdAttr.Id = oidLocalKeyID
 	localKeyIdAttr.Value.Class = 0
